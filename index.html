@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+ #controls {
+     position: absolute;
+     height: 50px;
+ }
+
+ #vis_container {
+     position: absolute;
+     top: 50px;
+     bottom: 0;
+     left:0;
+     right: 0;
+ }
+
+ #heap {
+     width: 100%;
+     height: 100%;
+ }
+
+ svg {
+     width: 100%;
+     height: 100%;
+ }
+
+ .size {
+     stroke-width: 5px;
+     stroke: #636363;
+     fill: white;
+ }
+
+ .used_young {
+     fill: #31a354;
+ }
+
+ .used_old {
+     fill: #e6550d;
+ }
+
+ .used_highwater {
+     fill: #3182bd;
+ }
+
+
+</style>
+<body>
+    <div id="controls">
+        <button onclick="prev()">Prev</button><button onclick="next()">Next</button>
+    </div>
+    <div id="vis_container"></div>
+</body>
+<script src="http://d3js.org/d3.v3.min.js"></script>
+<script>
+
+ var data = [
+     {
+         heap: [
+             {size: 250, used: 125, part: 'young'}
+             , {size: 40, used: 20, part: 'highwater'}
+             , {size: 80, used: 40, part: 'old'}
+         ],
+         cause: 'minor'
+     }
+     ,
+     {
+         heap: [
+             {size: 250, used: 200, part: 'young'}
+             , {size: 40, used: 20, part: 'highwater'}
+             , {size: 80, used: 40, part: 'old'}
+         ],
+         cause: 'major'
+     }
+     ,
+     {
+         heap: [
+             {size: 250, used: 250, part: 'young'}
+             , {size: 40, used: 20, part: 'highwater'}
+             , {size: 80, used: 40, part: 'old'}
+         ],
+         cause: 'none'
+     },
+     {
+         heap: [
+             {size: 250, used: 0, part: 'young'}
+             , {size: 40, used: 40, part: 'highwater'}
+             , {size: 80, used: 0, part: 'old'}
+         ],
+         cause: 'major'
+     }
+     ,
+     {
+         heap: [
+             {size: 250, used: 125, part: 'young'}
+             , {size: 40, used: 20, part: 'highwater'}
+             , {size: 80, used: 40, part: 'old'}
+         ],
+         cause: 'none'
+     }
+ ];
+
+
+ var svg = d3.select('#vis_container')
+             .append('svg');
+
+ var width = parseInt(svg.style('width'));
+ var height = parseInt(svg.style('height'));
+ var padding = 45;
+ var box_stroke = 5;
+
+ var sides = ['previous', 'current'];
+
+ var x_frame = d3.scale.ordinal()
+                 .domain(sides)
+                 .rangeBands([0, width], 0.1);
+
+
+ var total_max_size = d3.max(data.map(function(d) {
+     return d3.sum(d.heap.map(function(d) { return d.size }))
+ }));
+
+ var y_height = d3.scale.linear()
+                  .domain([0, total_max_size])
+                  .range([padding, height-padding]);
+
+ var gen_scale = function(d) {
+     if(d.length == 0) {
+         return {};
+     }
+
+     var young = d.find(function(e) { return e.part == 'young'});
+     var highwater = d.find(function(e) { return e.part == 'highwater'});
+     var old = d.find(function(e) { return e.part == 'old'});
+
+     // new heap grows up, old heap grows down
+     return {
+         'used': {
+             'young': (young.size - young.used),
+             'highwater': (young.size + highwater.size - highwater.used),
+             'old': (young.size + highwater.size)
+         },
+         'size': {
+             'young': 0,
+             'highwater': young.size,
+             'old': (young.size + highwater.size)
+         }
+     }
+ };
+
+ var opacity = 0.5;
+
+ svg.append('g')
+    .attr('class', 'previous')
+    .attr('opacity', opacity)
+    .attr('transform', 'translate(' + x_frame('current') + ')');
+
+ svg.append('g')
+    .attr('class', 'current')
+    .attr('transform', 'translate(' + x_frame('current') + ')');
+
+
+ var update = function(data, parent, duration) {
+     var heaps = d3.select(parent)
+                   .selectAll('.box')
+                   .data(data.heap);
+
+     var y = gen_scale(data.heap, 45);
+
+     var enter = heaps.enter();
+
+     var box = heaps.enter()
+                    .append('g')
+                    .attr('class', 'box');
+
+     box.append('rect')
+        .attr('class', function(d) {
+            return d.part;
+        })
+        .classed('heap', true)
+        .classed('size', true);
+
+     box.append('rect')
+        .attr('class', function(d) {
+            return 'used_' + d.part;
+        })
+        .classed('used', true)
+        .classed('heap', true);
+
+     box.selectAll('.heap')
+        .attr({
+            'rx': 5,
+            'ry': 5
+        });
+
+     heaps.exit().remove();
+
+     d3.select(parent)
+       .selectAll('.box')
+       .transition()
+       .attr('transform', function(d) {
+           if(d.part == 'old' && data.cause != 'major') {
+               return 'translate(0,20)';
+           }
+           return 'translate(0,0)';
+       });
+
+     d3.select(parent)
+       .selectAll('.box')
+       .select('.used')
+       .transition( )
+       .duration(duration)
+       .attr(
+           {'y': function(d) {
+               return y_height(y['used'][d.part]) + box_stroke; },
+            'x': box_stroke,
+            'width': x_frame.rangeBand() - 2*box_stroke,
+            'height': function(d) {
+                return y_height(d.used) - y_height(0) - 2*box_stroke;
+            },
+            'opacity': 1
+       });
+
+     d3.select(parent)
+       .selectAll('.box')
+       .select('.size')
+       .transition()
+       .duration(duration)
+       .attr(
+           {'y': function(d) {
+               return y_height(y['size'][d.part]); },
+            'width': x_frame.rangeBand(),
+            'height': function(d) {
+                  return y_height(d.size) - y_height(0);
+            },
+            'opacity': 1
+           });
+     return d3.select(parent);
+ };
+
+ var step = function(i) {
+     svg.select('.current')
+        .transition()
+        .attr('opacity', opacity)
+        .each('end', function() {
+            svg.select('.previous')
+               .transition()
+               .attr('transform', 'translate(-' + x_frame('current') + ')')
+               .each('end', function() {
+                   svg.select('.previous')
+                      .attr('transform', 'translate(' + x_frame('current') + ')');
+                   update(data[i-1], '.previous', 0)
+                                      .transition()
+                                      .attr('transform', 'translate(' + x_frame('previous') + ')')
+                                      .each('end', function() {
+                                          update(data[i], '.current', 200).attr('opacity', 1);
+                                      });
+               });
+        });
+ }
+
+
+ var i = 1;
+
+ function next() {
+     if(i + 1 < data.length && i > 0){
+         i++
+     };
+     step(i);
+ }
+
+ function prev() {
+     if(i < data.length && i - 1 > 0){
+         i--
+     };
+     step(i);
+ }
+
+</script>
